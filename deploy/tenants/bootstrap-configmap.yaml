@@ -1,3 +1,5 @@
+# NOTE: api_key values are Hermes display-masked but the on-disk file contains
+# the literal keys 'sk-team-a-0000000000000000' and 'sk-team-b-0000000000000000'.
 apiVersion: v1
 kind: ConfigMap
 metadata:

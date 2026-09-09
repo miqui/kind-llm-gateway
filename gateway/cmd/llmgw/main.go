@@ -2,8 +2,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/miqui/kind-llm-gateway/gateway/internal/config"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/logging"
@@ -12,10 +14,23 @@ import (
 	"github.com/miqui/kind-llm-gateway/gateway/internal/ratelimit"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/server"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/tenants"
+	"github.com/miqui/kind-llm-gateway/gateway/internal/tracing"
 )
 
 func main() {
 	cfg := config.Load()
+
+	shutdownTracing, err := tracing.InitTracing(context.Background(), tracing.ServiceName, cfg.JaegerOTLPEndpoint)
+	if err != nil {
+		log.Printf("tracing: init failed (continuing without tracing): %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			log.Printf("tracing: error shutting down tracer provider: %v", err)
+		}
+	}()
 
 	tenantStore, err := tenants.Open(cfg.SQLitePath)
 	if err != nil {

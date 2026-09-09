@@ -16,11 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/miqui/kind-llm-gateway/gateway/internal/auth"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/logging"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/policy"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/quota"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/tokens"
+	"github.com/miqui/kind-llm-gateway/gateway/internal/tracing"
 )
 
 const (
@@ -140,6 +143,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		relayBudgetError(w, berr)
 		return
 	}
+	tracing.AddEvent(r.Context(), "budget.ok")
 
 	tokMsgs := make([]tokens.ChatMessage, len(msgs))
 	for i, m := range msgs {
@@ -158,6 +162,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeTypedError(w, http.StatusTooManyRequests, "quota_exceeded", "daily token quota exceeded")
 		return
 	}
+	tracing.AddEvent(r.Context(), "quota.reserved", attribute.Int64("quota.reserved_tokens", estimated))
 
 	// Retrieval augmentation (chat path only). Failure is non-fatal: log
 	// and continue without context docs.
@@ -200,12 +205,17 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	copyForwardHeaders(upstreamReq, r, tenant.ID)
 
+	upstreamCtx, upstreamSpan := tracing.StartUpstreamSpan(r.Context(), "llm.upstream.chat", upstreamReq)
+	upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 	resp, err := h.Client.Do(upstreamReq)
 	if err != nil {
+		upstreamSpan.End()
 		h.Quota.Refund(tenant.ID, estimated)
 		writeTypedError(w, http.StatusBadGateway, "upstream_error", "failed to reach upstream: "+err.Error())
 		return
 	}
+	upstreamSpan.End()
 	defer resp.Body.Close()
 
 	if stream {
@@ -255,6 +265,7 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 		relayBudgetError(w, berr)
 		return
 	}
+	tracing.AddEvent(r.Context(), "budget.ok")
 
 	promptTokens := tokens.CountTokens(inputText)
 	estimated := int64(promptTokens)
@@ -264,6 +275,7 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 		writeTypedError(w, http.StatusTooManyRequests, "quota_exceeded", "daily token quota exceeded")
 		return
 	}
+	tracing.AddEvent(r.Context(), "quota.reserved", attribute.Int64("quota.reserved_tokens", estimated))
 
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, target+embedPath, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -273,12 +285,17 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	copyForwardHeaders(upstreamReq, r, tenant.ID)
 
+	upstreamCtx, upstreamSpan := tracing.StartUpstreamSpan(r.Context(), "llm.upstream.embed", upstreamReq)
+	upstreamReq = upstreamReq.WithContext(upstreamCtx)
+
 	resp, err := h.Client.Do(upstreamReq)
 	if err != nil {
+		upstreamSpan.End()
 		h.Quota.Refund(tenant.ID, estimated)
 		writeTypedError(w, http.StatusBadGateway, "upstream_error", "failed to reach upstream: "+err.Error())
 		return
 	}
+	upstreamSpan.End()
 	defer resp.Body.Close()
 
 	h.relayNonStream(w, resp, tenant.ID, estimated, promptTokens, model, embedPath, bodyBytes)
@@ -460,7 +477,11 @@ func (h *Handler) fetchRetrieval(ctx context.Context, query, tenantID, tracepare
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if traceparent != "" {
+	// Inject the current trace context (honoring any client-supplied
+	// traceparent already extracted onto ctx by the server middleware) so
+	// retrieval-svc's own span becomes a child of this request's span.
+	tracing.InjectTraceparent(ctx, req)
+	if traceparent != "" && req.Header.Get(traceparentHeader) == "" {
 		req.Header.Set(traceparentHeader, traceparent)
 	}
 

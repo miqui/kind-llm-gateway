@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/miqui/kind-llm-gateway/gateway/internal/auth"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/config"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/logging"
@@ -13,6 +15,7 @@ import (
 	"github.com/miqui/kind-llm-gateway/gateway/internal/quota"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/ratelimit"
 	"github.com/miqui/kind-llm-gateway/gateway/internal/tenants"
+	"github.com/miqui/kind-llm-gateway/gateway/internal/tracing"
 )
 
 // Server holds dependencies for building the HTTP handler.
@@ -63,13 +66,27 @@ func (s *Server) routes() {
 
 	authMW := auth.Middleware(s.TenantStore)
 	rlMW := ratelimit.Middleware(s.RateLimiter, s.tenantRPS)
-
-	chain := func(h http.HandlerFunc) http.Handler {
-		return authMW(rlMW(h))
+	authEventMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tenant, ok := auth.FromContext(r.Context()); ok {
+				tracing.AddEvent(r.Context(), "auth.ok", attribute.String("tenant.id", tenant.ID))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	rlEventMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tracing.AddEvent(r.Context(), "ratelimit.ok")
+			next.ServeHTTP(w, r)
+		})
 	}
 
-	s.mux.Handle("POST /v1/chat/completions", chain(proxyHandler.ChatCompletions))
-	s.mux.Handle("POST /v1/embeddings", chain(proxyHandler.Embeddings))
+	chain := func(route string, h http.HandlerFunc) http.Handler {
+		return tracing.Middleware(route)(authMW(authEventMW(rlMW(rlEventMW(h)))))
+	}
+
+	s.mux.Handle("POST /v1/chat/completions", chain("/v1/chat/completions", proxyHandler.ChatCompletions))
+	s.mux.Handle("POST /v1/embeddings", chain("/v1/embeddings", proxyHandler.Embeddings))
 }
 
 // tenantRPS resolves the authenticated tenant's configured requests-per-

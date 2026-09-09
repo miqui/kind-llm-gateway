@@ -23,6 +23,9 @@ type Config struct {
 	// MaxCompletionTokens is the global cap on a request's requested
 	// max_tokens value.
 	MaxCompletionTokens int
+	// LogMaxRows bounds retention of the requests log table: rows beyond
+	// this count are swept (oldest first) on every insert.
+	LogMaxRows int
 	// RedactExtraPatterns are additional regex patterns (as raw strings) to
 	// apply during log redaction, on top of the compiled-in defaults.
 	RedactExtraPatterns []string
@@ -48,6 +51,7 @@ func Load() Config {
 		JaegerOTLPEndpoint:  getenv("JAEGER_OTLP_ENDPOINT", "http://jaeger:4318"),
 		MaxPromptTokens:     getenvInt("MAX_PROMPT_TOKENS", 4096),
 		MaxCompletionTokens: getenvInt("MAX_COMPLETION_TOKENS", 1024),
+		LogMaxRows:          getenvInt("LOG_MAX_ROWS", 10000),
 		RedactExtraPatterns: splitCSV(os.Getenv("REDACT_EXTRA_PATTERNS")),
 	}
 }

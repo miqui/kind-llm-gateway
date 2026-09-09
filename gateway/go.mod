@@ -3,11 +3,13 @@ module github.com/miqui/kind-llm-gateway/gateway
 go 1.27.1
 
 require (
+	github.com/pkoukk/tiktoken-go v0.1.7
 	golang.org/x/time v0.16.0
 	modernc.org/sqlite v1.58.0
 )
 
 require (
+	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

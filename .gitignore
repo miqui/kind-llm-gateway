@@ -1,0 +1,7 @@
+/target
+gateway/llmgw
+retrieval/retrieval-svc
+*.sqlite
+*.db
+.env
+.DS_Store

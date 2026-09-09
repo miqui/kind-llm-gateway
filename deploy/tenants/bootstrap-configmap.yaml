@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llmgw-tenants-bootstrap
+  namespace: llmgw
+data:
+  tenants.json: |
+    [
+      {
+        "id": "team-a",
+        "name": "Team A",
+        "api_key": "sk-team-a-0000000000000000",
+        "rate_limit_rps": 2,
+        "daily_token_quota": 100000,
+        "allowed_models": ["qwen2.5-1.5b"],
+        "workload_class": "team",
+        "cost_tier": "standard"
+      },
+      {
+        "id": "team-b",
+        "name": "Team B",
+        "api_key": "sk-team-b-0000000000000000",
+        "rate_limit_rps": 1,
+        "daily_token_quota": 10000,
+        "allowed_models": ["qwen2.5-1.5b"],
+        "workload_class": "team",
+        "cost_tier": "economy"
+      }
+    ]

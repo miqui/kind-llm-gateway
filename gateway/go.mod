@@ -2,7 +2,10 @@ module github.com/miqui/kind-llm-gateway/gateway
 
 go 1.27.1
 
-require modernc.org/sqlite v1.58.0
+require (
+	golang.org/x/time v0.16.0
+	modernc.org/sqlite v1.58.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

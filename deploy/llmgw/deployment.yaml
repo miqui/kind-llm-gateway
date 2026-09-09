@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llmgw
+  namespace: llmgw
+  labels:
+    app: llmgw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llmgw
+  template:
+    metadata:
+      labels:
+        app: llmgw
+    spec:
+      containers:
+        - name: llmgw
+          image: llmgw:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LLAMA_CHAT_URL
+              value: "http://llama-svc.llmgw:8080"
+            - name: LLAMA_EMBED_URL
+              value: "http://llama-svc.llmgw:8081"
+            - name: RETRIEVAL_URL
+              value: "http://retrieval-svc:8080"
+            - name: SQLITE_PATH
+              value: "/data/llmgw.db"
+            - name: JAEGER_OTLP_ENDPOINT
+              value: "http://jaeger:4318"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://jaeger:4318"
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: ADMIN_ADDR
+              value: ":8081"
+            - name: MAX_PROMPT_TOKENS
+              value: "3000"
+            - name: MAX_COMPLETION_TOKENS
+              value: "1000"
+            - name: LOG_MAX_ROWS
+              value: "10000"
+            - name: TENANTS_BOOTSTRAP_JSON
+              value: "/etc/llmgw/tenants/tenants.json"
+            - name: ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llmgw-admin
+                  key: ADMIN_API_KEY
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tenants-bootstrap
+              mountPath: /etc/llmgw/tenants
+              readOnly: true
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+              cpu: 500m
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tenants-bootstrap
+          configMap:
+            name: llmgw-tenants-bootstrap

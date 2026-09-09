@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: retrieval-svc
+  namespace: llmgw
+  labels:
+    app: retrieval-svc
+spec:
+  selector:
+    app: retrieval-svc
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

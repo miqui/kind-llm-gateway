@@ -1,0 +1,35 @@
+# /v1/* -> svc/llmgw:8080. proxy_buffering is disabled via ProxySettingsPolicy
+# (NGF v2.7.0) so SSE chunks are streamed to the client without buffering.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llmgw-v1
+  namespace: llmgw
+spec:
+  parentRefs:
+    - name: llmgw-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+      backendRefs:
+        - name: llmgw
+          port: 8080
+---
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ProxySettingsPolicy
+metadata:
+  name: llmgw-v1-sse
+  namespace: llmgw
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llmgw-v1
+  buffering:
+    disable: true
+  timeout:
+    read: 300s
+    send: 300s
+    connect: 10s

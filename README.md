@@ -48,8 +48,36 @@ docs/plans/                    implementation plan
 ## Setup (complete bring-up)
 
 ```bash
+make up
+```
+
+This creates the cluster if absent, builds and loads local images, installs
+Gateway API and NGINX Gateway Fabric (NGF), and deploys the stack. It waits for
+CRDs to be established, the NGF controller to roll out, the Gateway to be
+accepted and programmed, and all application and ingress deployments to roll
+out before reporting success.
+
+All Kubernetes commands in `make up` explicitly target `kind-llmgw`, even if
+another context is selected. The installer defaults to that context when run
+directly too. `KUBECONFIG` is honored; deployment and Gateway waits default to
+600 seconds and can be adjusted with `make up ROLLOUT_TIMEOUT=900s`.
+
+Before creating or changing cluster resources, `make up` checks for required
+tools and a reachable Docker daemon. If startup then fails, it prints node,
+deployment, and pod status, recent events, Gateway/HTTPRoute status, and bounded
+container logs from `nginx-gateway` and `llmgw` (including previous logs for
+restarted containers). Diagnostic requests use a 10-second timeout, and failures
+to collect diagnostics do not hide the original startup failure. Logs are
+printed to the terminal; review them for sensitive data before sharing.
+
+For a manual bring-up, the equivalent steps are:
+
+```bash
 # 1. Create the cluster (2 nodes: llmgw-control-plane + llmgw-worker)
 kind create cluster --config kind/kind-config.yaml
+
+# Explicitly target this cluster for every command below.
+kubectl() { command kubectl --context kind-llmgw "$@"; }
 
 # 2. Namespace + Jaeger
 kubectl apply -f deploy/namespace.yaml
@@ -74,11 +102,12 @@ kubectl apply -f deploy/llmgw/
 kubectl apply -f deploy/tenants/
 kubectl apply -f deploy/ngf/
 
-# 7. Wait for the gateway
-kubectl -n llmgw rollout status deploy/llmgw --timeout=300s
-
-# 8. Or all of the above via make:
-make up
+# 7. Wait for Gateway readiness and all deployments, including ingress
+kubectl -n llmgw wait --for=condition=Accepted gateway/llmgw-gateway --timeout=600s
+kubectl -n llmgw wait --for=condition=Programmed gateway/llmgw-gateway --timeout=600s
+kubectl -n llmgw rollout status deployment/jaeger deployment/llama-server \
+  deployment/retrieval-svc deployment/llmgw deployment/llmgw-gateway-nginx --timeout=600s
+unset -f kubectl
 ```
 
 ## Exposing the gateway
